@@ -133,22 +133,22 @@ int main(int argc, char **argv)
     /* Execute the shell's read/eval loop */
     while (1) {
 
-	/* Read command line */
-	if (emit_prompt) {
-	    printf("%s", prompt);
-	    fflush(stdout);
-	}
-	if ((fgets(cmdline, MAXLINE, stdin) == NULL) && ferror(stdin))
-	    app_error("fgets error");
-	if (feof(stdin)) { /* End of file (ctrl-d) */
-	    fflush(stdout);
-	    exit(0);
-	}
+    	/* Read command line */
+    	if (emit_prompt) {
+    	    printf("%s", prompt);
+    	    fflush(stdout);
+    	}
+    	if ((fgets(cmdline, MAXLINE, stdin) == NULL) && ferror(stdin))
+    	    app_error("fgets error");
+    	if (feof(stdin)) { /* End of file (ctrl-d) */
+    	    fflush(stdout);
+    	    exit(0);
+    	}
 
-	/* Evaluate the command line */
-	eval(cmdline);
-	fflush(stdout);
-	fflush(stdout);
+    	/* Evaluate the command line */
+    	eval(cmdline);
+    	fflush(stdout);
+    	fflush(stdout);
     } 
 
     exit(0); /* control never reaches here */
@@ -167,6 +167,24 @@ int main(int argc, char **argv)
 */
 void eval(char *cmdline) 
 {
+    int bg,i=1,error;
+    char *argv[MAXARGS];    /*The *argv array to hold to command line inputs*/
+    *argv=(char *)malloc(sizeof(char)*MAXLINE);
+    
+    bg=parseline(cmdline,argv);
+
+    if(strcmp(argv[0],"quit")==0 || strcmp(argv[0],"jobs")==0 || strcmp(argv[0],"bg")==0 || strcmp(argv[0],"fg")==0){  /*If builtin command then execute that*/
+        builtin_cmd(argv);
+    }
+    else{
+        if(fork()==0)
+            error=execvp(argv[0],argv);
+        else
+            wait(NULL);
+            if(error==-1){
+                unix_error(argv[0]);
+            }
+    }
     return;
 }
 
@@ -204,16 +222,16 @@ int parseline(const char *cmdline, char **argv)
 	argv[argc++] = buf;
 	*delim = '\0';
 	buf = delim + 1;
-	while (*buf && (*buf == ' ')) /* ignore spaces */
-	       buf++;
+    	while (*buf && (*buf == ' ')) /* ignore spaces */
+    	       buf++;
 
-	if (*buf == '\'') {
-	    buf++;
-	    delim = strchr(buf, '\'');
-	}
-	else {
-	    delim = strchr(buf, ' ');
-	}
+    	if (*buf == '\'') {
+    	    buf++;
+    	    delim = strchr(buf, '\'');
+    	}
+    	else {
+    	    delim = strchr(buf, ' ');
+    	}
     }
     argv[argc] = NULL;
     
