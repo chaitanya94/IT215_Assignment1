@@ -167,23 +167,64 @@ int main(int argc, char **argv)
 */
 void eval(char *cmdline) 
 {
+	sigset_t sigbits;
+	pid_t pid;
     int bg,i=1,error;
     char *argv[MAXARGS];    /*The *argv array to hold to command line inputs*/
-    *argv=(char *)malloc(sizeof(char)*MAXLINE);
+    //*argv=(char *)malloc(sizeof(char)*MAXLINE);
     
     bg=parseline(cmdline,argv);
+	
+    //if(strcmp(argv[0],"quit")==0 || strcmp(argv[0],"jobs")==0 || strcmp(argv[0],"bg")==0 || strcmp(argv[0],"fg")==0){  /*If builtin command then execute that*/
+    //    builtin_cmd(argv);
+    //}
+    if(builtin_cmd(argv)!=0){
+    	if(sigemptyset(&sigbits)==-1){
+			unix_error("sigemptyset()");
+    	}
+    	
+    	if(sigaddset(&sigbits,SIGCHLD)){
+			unix_error("sigaddset()");
+    	}
+    	
+    	if(sigprocmask(SIG_BLOCK,&sigbits,NULL)==-1){
+			unix_error("sigprocmask()");
+    	}
 
-    if(strcmp(argv[0],"quit")==0 || strcmp(argv[0],"jobs")==0 || strcmp(argv[0],"bg")==0 || strcmp(argv[0],"fg")==0){  /*If builtin command then execute that*/
-        builtin_cmd(argv);
-    }
-    else{
-        if(fork()==0)
+    	
+        if(pid=fork()==0){
+        	if(sigprocmask(SIG_UNBLOCK,&sigbits,NULL)==-1){		// child process may need to use it
+				unix_error("sigprocmask()");
+    		}
+
+    		if(setpgid(0,0)==-1){
+				unix_error("setpgid()");
+    		}
+        	
             error=execvp(argv[0],argv);
-        else
-            wait(NULL);
-            if(error==-1){
-                unix_error(argv[0]);
-            }
+        }
+        if(pid!=0){
+			if(sigprocmask(SIG_UNBLOCK,&sigbits,NULL)==-1){		// parent process may need to use it
+				unix_error("sigprocmask()");
+    		}
+        }
+        if(bg==0){
+			addjob(jobs,pid,FG,cmdline);
+		}
+		else{
+			addjob(jobs,pid,BG,cmdline);
+		}
+        if(error==-1){
+     	    unix_error(argv[0]);
+        }
+        else{
+			if(bg==0){
+				waitfg(pid);
+			}
+			else if(bg==1){
+				printf("[%d] (%d) %s",pid2jid(pid),pid,cmdline);
+			}
+        }
     }
     return;
 }
@@ -250,8 +291,36 @@ int parseline(const char *cmdline, char **argv)
  *    it immediately.  
  */
 int builtin_cmd(char **argv) 
-{
-    return 0;     /* not a builtin command */
+{	
+	const char str[10];
+	const char array[]="quitjobsbgfg";
+	char *ret;
+	if(strlen(argv[0])==0)
+		return 1;
+		
+	else{
+			strcpy(str,argv[0]);
+			ret=strstr(array,str);
+
+			switch(ret){
+				case 'q':
+					exit(0);
+					break;
+				case 'j':
+					return 1;
+				case 'b':
+				case 'f':
+					return 1;;
+				default:
+					return 1;
+
+			}
+			//if(strcmp(argv[0],"quit")==0 || strcmp(argv[0],"jobs")==0 || strcmp(argv[0],"bg")==0 || strcmp(argv[0],"fg")==0){
+			
+		}
+	}
+	return 0;
+   // return 0;     /* not a builtin command */
 }
 
 /* 
@@ -265,8 +334,9 @@ void do_bgfg(char **argv)
 /* 
  * waitfg - Block until process pid is no longer the foreground process
  */
-void waitfg(pid_t pid)
-{
+void waitfg(pid_t pid){
+	int status;
+	waitpid(pid,&status,0);
     return;
 }
 
