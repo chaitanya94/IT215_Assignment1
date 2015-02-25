@@ -178,7 +178,7 @@ void eval(char *cmdline)
     //if(strcmp(argv[0],"quit")==0 || strcmp(argv[0],"jobs")==0 || strcmp(argv[0],"bg")==0 || strcmp(argv[0],"fg")==0){  /*If builtin command then execute that*/
     //    builtin_cmd(argv);
     //}
-    if(builtin_cmd(argv)!=0){
+    if(builtin_cmd(argv)!=1){
     	if(sigemptyset(&sigbits)==-1){
 			unix_error("sigemptyset()");
     	}
@@ -236,8 +236,7 @@ void eval(char *cmdline)
  * argument.  Return true if the user has requested a BG job, false if
  * the user has requested a FG job.  
  */
-int parseline(const char *cmdline, char **argv) 
-{
+int parseline(const char *cmdline, char **argv){
     static char array[MAXLINE]; /* holds local copy of command line */
     char *buf = array;          /* ptr that traverses command line */
     char *delim;                /* points to first space delimiter */
@@ -290,35 +289,47 @@ int parseline(const char *cmdline, char **argv)
  * builtin_cmd - If the user has typed a built-in command then execute
  *    it immediately.  
  */
-int builtin_cmd(char **argv) 
-{	
+int builtin_cmd(char **argv){	
+    int i;
 	const char str[10];
 	const char array[]="quitjobsbgfg";
-	char *ret;
-	if(strlen(argv[0])==0)
+	char *ret,ans;
+	if(argv[0]==NULL)
 		return 1;
 		
 	else{
 			strcpy(str,argv[0]);
 			ret=strstr(array,str);
-
-			switch(ret){
-				case 'q':
+            if(ret==NULL)
+                return 0;
+            ans=*ret;
+			switch(ans){
+				case 'q':   //quit
 					exit(0);
 					break;
-				case 'j':
+				case 'j':   //job
+                    /*for(i=0;i<MAXJOBS;i++){
+                        if(jobs[i].state==BG){
+                            printf("[%d] (%d) Running %s\n",jobs[i].jid,jobs[i].pid,jobs[i].cmdline);
+                        }
+                        else if(jobs[i].state==ST){
+                            printf("[%d] (%d) Stopped %s\n",jobs[i].jid,jobs[i].pid,jobs[i].cmdline);
+                        }
+                    }*/
+                    listjobs(jobs);
 					return 1;
-				case 'b':
-				case 'f':
+				case 'b':   //bg
+				case 'f':   //fg
+                    do_bgfg(argv);
 					return 1;;
 				default:
-					return 1;
+					return 0;
 
 			}
 			//if(strcmp(argv[0],"quit")==0 || strcmp(argv[0],"jobs")==0 || strcmp(argv[0],"bg")==0 || strcmp(argv[0],"fg")==0){
 			
-		}
 	}
+	
 	return 0;
    // return 0;     /* not a builtin command */
 }
@@ -326,8 +337,21 @@ int builtin_cmd(char **argv)
 /* 
  * do_bgfg - Execute the builtin bg and fg commands
  */
-void do_bgfg(char **argv) 
-{
+void do_bgfg(char **argv){
+    pid_t toUse;
+    int error;
+
+    if(argv[1]==NULL){
+        printf("%s command requires PID or \%jobid argument",argv[0]);
+    }
+    argv[1]=toUse;
+    /*kill(toUse,SIGCONT);
+    if(fork()==0){
+         error=execl("/bin/kill","-s","SIGCONT",toUse);
+    }
+    if(error!=0){
+        unix_error("Cannot kill");
+    }*/
     return;
 }
 
@@ -351,8 +375,18 @@ void waitfg(pid_t pid){
  *     available zombie children, but doesn't wait for any other
  *     currently running children to terminate.  
  */
-void sigchld_handler(int sig) 
-{
+void sigchld_handler(int sig){  // I just need to do error handling for FG job. BG is done after the fork() part anyway
+    pid_t pro_run=fgpid(jobs);
+    int status;
+
+    if(waitpid(pro_run,&status,WNOHANG | WUNTRACED)!=-1){
+        if(WIFEXITED(status)!=0){
+            printf("Process %d didnt exit normally\n",pro_run);
+        }
+    }
+    else{
+        unix_error("waitpid error");
+    }
     return;
 }
 
@@ -361,8 +395,19 @@ void sigchld_handler(int sig)
  *    user types ctrl-c at the keyboard.  Catch it and send it along
  *    to the foreground job.  
  */
-void sigint_handler(int sig) 
-{
+void sigint_handler(int sig){
+    pid_t fg_run=fgpid(jobs);
+    int error=0;
+    if(fg_run!=0){
+        if(fork()==0){
+            error=execl("/bin/kill","-2",fg_run);
+        }
+        if(error!=0){
+            unix_error("Cannot kill");
+        }
+        printf("[%d] (%d) terminated by signal %d\n",pid2jid(fg_run),fg_run,SIGINT);
+        deletejob(jobs,fg_run);
+    }
     return;
 }
 
@@ -371,8 +416,19 @@ void sigint_handler(int sig)
  *     the user types ctrl-z at the keyboard. Catch it and suspend the
  *     foreground job by sending it a SIGTSTP.  
  */
-void sigtstp_handler(int sig) 
-{
+void sigtstp_handler(int sig){
+    pid_t fg_run=fgpid(jobs);
+    int error=0;
+    if(fg_run!=0){
+        if(fork()==0){
+            error=execl("/bin/kill","-18",fg_run);
+        }
+        if(error!=0){
+            unix_error("Cannot kill");
+        }
+        printf("[%d] (%d) stopped by signal %d\n",pid2jid(fg_run),fg_run,SIGTSTP);
+        getjobpid(jobs,fg_run)->state=ST;
+    }
     return;
 }
 
@@ -466,7 +522,7 @@ pid_t fgpid(struct job_t *jobs) {
 }
 
 /* getjobpid  - Find a job (by PID) on the job list */
-struct job_t *getjobpid(struct job_t *jobs, pid_t pid) {
+struct job_t *getjobpid(struct job_t *jobs, pid_t pid){
     int i;
 
     if (pid < 1)
@@ -478,12 +534,11 @@ struct job_t *getjobpid(struct job_t *jobs, pid_t pid) {
 }
 
 /* getjobjid  - Find a job (by JID) on the job list */
-struct job_t *getjobjid(struct job_t *jobs, int jid) 
-{
+struct job_t *getjobjid(struct job_t *jobs, int jid){
     int i;
 
     if (jid < 1)
-	return NULL;
+	   return NULL;
     for (i = 0; i < MAXJOBS; i++)
 	if (jobs[i].jid == jid)
 	    return &jobs[i];
