@@ -200,32 +200,61 @@ void eval(char *cmdline)
     		if(setpgid(0,0)==-1){
 				unix_error("setpgid()");
     		}
-        	
-            error=execvp(argv[0],argv);
-        }
-        if(pid!=0){
-			if(sigprocmask(SIG_UNBLOCK,&sigbits,NULL)==-1){		// parent process may need to use it
-				unix_error("sigprocmask()");
-    		}
-        }
-        if(bg==0){
-			addjob(jobs,pid,FG,cmdline);
-		}
-		else{
-			addjob(jobs,pid,BG,cmdline);
-		}
-        if(error==-1){
-     	    unix_error(argv[0]);
+        	if(execvp(argv[0],argv)<0){
+                unix_error(argv[0]);
+                exit(1);
+            }
+            //error=execvp(argv[0],argv);
         }
         else{
-			if(bg==0){
-				waitfg(pid);
-			}
-			else if(bg==1){
-				printf("[%d] (%d) %s",pid2jid(pid),pid,cmdline);
-			}
+            if(sigprocmask(SIG_UNBLOCK,&sigbits,NULL)==-1){ // parent process may need to use it
+                printf("Here");
+                unix_error("sigprocmask()");
+            }
+            if(bg==0){
+                addjob(jobs,pid,FG,cmdline);
+            }
+            else{
+                addjob(jobs,pid,BG,cmdline);
+            }
+            
+            //printf("Here\n");
+            /*if(error==-1){
+                unix_error(argv[0]);
+            }*/
+            
+            if(bg==0){
+                waitfg(pid);
+            }
+            else if(bg==1){
+                printf("[%d] (%d) %s",pid2jid(pid),pid,cmdline);
+            }
         }
+        /*else{
+            if(pid!=0){
+    			if(sigprocmask(SIG_UNBLOCK,&sigbits,NULL)==-1){		// parent process may need to use it
+    				unix_error("sigprocmask()");
+        		}
+            }
+            if(bg==0){
+    			addjob(jobs,pid,FG,cmdline);
+    		}
+    		else{
+    			addjob(jobs,pid,BG,cmdline);
+    		}
+            /*if(error==-1){
+         	    unix_error(argv[0]);
+            }*/
+            
+    		/*if(bg==0){
+    			waitfg(pid);
+    		}
+    		else if(bg==1){
+    			printf("[%d] (%d) %s",pid2jid(pid),pid,cmdline);
+    		}*/
+        //}
     }
+
     return;
 }
 
@@ -291,7 +320,7 @@ int parseline(const char *cmdline, char **argv){
  */
 int builtin_cmd(char **argv){	
     int i;
-	const char str[10];
+	char str[10];
 	const char array[]="quitjobsbgfg";
 	char *ret,ans;
 	if(argv[0]==NULL)
@@ -339,12 +368,53 @@ int builtin_cmd(char **argv){
  */
 void do_bgfg(char **argv){
     pid_t toUse;
-    int error;
+    int error,jid;
+    char *str;
+    struct job_t *job;
+    pid_t pid;
 
-    if(argv[1]==NULL){
-        printf("%s command requires PID or \%jobid argument",argv[0]);
+    str=argv[1];
+    if(str==NULL){
+        printf("%s command requires PID or %%jobid argument\n",argv[0]);
+        return ;
     }
-    argv[1]=toUse;
+    //argv[1]=toUse;
+
+    if(str[0]=='%'){
+        jid=atoi(&str[1]);
+        if((job=getjobjid(jobs,jid))==NULL){
+            printf("%s: No such job\n",str);
+            return ;
+        }
+    }
+
+    else if(isdigit(str[0])){
+        pid=atoi(str);
+        if((job=getjobpid(jobs,pid))==NULL){
+            printf("(%s): No such process\n",str);
+            return ;
+        }
+    }
+    else{
+        printf("%s command requires PID or %%jobid argument\n",argv[0]);
+    }
+
+    if(kill(-(job->pid),SIGCONT)<0){
+        unix_error("kill error");
+    }
+
+    if(!strcmp("bg",argv[0])){
+        printf("[%d] (%d) %s", job->jid, job->pid, job->cmdline);
+        job->state=BG;
+    }
+
+    if(!strcmp("fg",argv[0])){
+        job->state=FG;
+        waitfg(job->pid);
+    }
+    else{
+        printf("bg/fg error: %s\n",argv[0]);
+    }
     /*kill(toUse,SIGCONT);
     if(fork()==0){
          error=execl("/bin/kill","-s","SIGCONT",toUse);
@@ -360,7 +430,10 @@ void do_bgfg(char **argv){
  */
 void waitfg(pid_t pid){
 	int status;
-	waitpid(pid,&status,0);
+
+	if(waitpid(-pid,&status,WNOHANG|WUNTRACED)<0){
+        unix_error("wait error");
+    }
     return;
 }
 
@@ -399,12 +472,13 @@ void sigint_handler(int sig){
     pid_t fg_run=fgpid(jobs);
     int error=0;
     if(fg_run!=0){
-        if(fork()==0){
+        kill(fg_run,SIGINT);
+        /*if(fork()==0){
             error=execl("/bin/kill","-2",fg_run);
         }
         if(error!=0){
             unix_error("Cannot kill");
-        }
+        }*/
         printf("[%d] (%d) terminated by signal %d\n",pid2jid(fg_run),fg_run,SIGINT);
         deletejob(jobs,fg_run);
     }
@@ -420,12 +494,13 @@ void sigtstp_handler(int sig){
     pid_t fg_run=fgpid(jobs);
     int error=0;
     if(fg_run!=0){
-        if(fork()==0){
+        kill(fg_run,SIGTSTP);
+        /*if(fork()==0){
             error=execl("/bin/kill","-18",fg_run);
         }
         if(error!=0){
             unix_error("Cannot kill");
-        }
+        }*/
         printf("[%d] (%d) stopped by signal %d\n",pid2jid(fg_run),fg_run,SIGTSTP);
         getjobpid(jobs,fg_run)->state=ST;
     }
