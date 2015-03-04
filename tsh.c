@@ -349,7 +349,7 @@ void do_bgfg(char **argv){
         }
     }
     else{
-        printf("%s: argument must be a PID or %%jobid argument\n",argv[1]); /* Invalid argument given */
+        printf("%s: argument must be a PID or %%jobid argument\n",argv[0]); /* Invalid argument given */
         return;
     }
 
