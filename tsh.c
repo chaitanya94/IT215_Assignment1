@@ -200,7 +200,7 @@ void eval(char *cmdline)
     		if(setpgid(0,0)==-1){
 				unix_error("setpgid error");
     		}
-        	if(execvp(argv[0],argv)<0){
+        	if(execve(argv[0],argv,environ)<0){
                 printf("%s: Command not found\n",argv[0] );
                 //unix_error(argv[0]);
                 exit(1);
@@ -374,7 +374,7 @@ void do_bgfg(char **argv){
     pid_t toUse;
     int error,jid;
     char *str;
-    struct job_t *job;
+    struct job_t *job=NULL;
     pid_t pid;
 
     str=argv[1];
@@ -400,32 +400,36 @@ void do_bgfg(char **argv){
         }
     }
     else{
-        printf("%s command requires PID or %%jobid argument\n",argv[0]);
+        printf("%s: argument must be a PID or %%jobid argument\n",argv[1]);
+        return;
     }
 
-    if(kill(-(job->pid),SIGCONT)<0){
-        unix_error("kill error");
-    }
+    if(job!=NULL && job->state==ST){
+        if(kill(-(job->pid),SIGCONT)<0){
+            unix_error("kill error");
+        }
 
-    if(!strcmp("bg",argv[0])){
-        printf("[%d] (%d) %s", job->jid, job->pid, job->cmdline);
-        job->state=BG;
-    }
+        if(!strcmp("bg",argv[0])){
+            job->state=BG;
+            printf("[%d] (%d) %s", job->jid, job->pid, job->cmdline);
+            //job->state=BG;
+        }
 
-    if(!strcmp("fg",argv[0])){
-        job->state=FG;
-        waitfg(job->pid);
+        else if(!strcmp("fg",argv[0])){
+            job->state=FG;
+            waitfg(job->pid);
+        }
+        else{
+            printf("bg/fg error: %s\n",argv[0]);
+        }
+        /*kill(toUse,SIGCONT);
+        if(fork()==0){
+             error=execl("/bin/kill","-s","SIGCONT",toUse);
+        }
+        if(error!=0){
+            unix_error("Cannot kill");
+        }*/
     }
-    else{
-        printf("bg/fg error: %s\n",argv[0]);
-    }
-    /*kill(toUse,SIGCONT);
-    if(fork()==0){
-         error=execl("/bin/kill","-s","SIGCONT",toUse);
-    }
-    if(error!=0){
-        unix_error("Cannot kill");
-    }*/
     return;
 }
 
@@ -433,13 +437,14 @@ void do_bgfg(char **argv){
  * waitfg - Block until process pid is no longer the foreground process
  */
 void waitfg(pid_t pid){
-	int status;
+	//int status;
     //printf("here\n");
 	// if(waitpid(-pid,&status,WUNTRACED)<0){
  //        //printf("here\n");
  //        unix_error("wait error");
  //    }
-    waitpid(pid, &status, WUNTRACED);
+    while(pid==fgpid(jobs));
+    //waitpid(pid, &status, WUNTRACED);
     return;
 }
 
@@ -492,14 +497,14 @@ void sigint_handler(int sig){
     pid_t fg_run=fgpid(jobs);
     int error=0;
     if(fg_run!=0){
-        kill(fg_run,SIGINT);
+        kill(-fg_run,SIGINT);
         /*if(fork()==0){
             error=execl("/bin/kill","-2",fg_run);
         }
         if(error!=0){
             unix_error("Cannot kill");
         }*/
-        printf("[%d] (%d) terminated by signal %d\n",pid2jid(fg_run),fg_run,SIGINT);
+        printf("Job [%d] (%d) terminated by signal %d\n",pid2jid(fg_run),fg_run,SIGINT);
         deletejob(jobs,fg_run);
     }
     return;
@@ -514,15 +519,16 @@ void sigtstp_handler(int sig){
     pid_t fg_run=fgpid(jobs);
     int error=0;
     if(fg_run!=0){
-        kill(fg_run,SIGTSTP);
+        kill(-fg_run,SIGTSTP);
         /*if(fork()==0){
             error=execl("/bin/kill","-18",fg_run);
         }
         if(error!=0){
             unix_error("Cannot kill");
         }*/
-        printf("[%d] (%d) stopped by signal %d\n",pid2jid(fg_run),fg_run,SIGTSTP);
         getjobpid(jobs,fg_run)->state=ST;
+        printf("Job [%d] (%d) stopped by signal %d\n",pid2jid(fg_run),fg_run,SIGTSTP);
+        //getjobpid(jobs,fg_run)->state=ST;
     }
     return;
 }
