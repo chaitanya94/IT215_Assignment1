@@ -191,8 +191,8 @@ void eval(char *cmdline)
 			unix_error("sigprocmask error");
     	}
 
-    	
-        if(pid=fork()==0){
+    	pid=fork();
+        if(pid==0){
         	if(sigprocmask(SIG_UNBLOCK,&sigbits,NULL)==-1){		// child process may need to use it
 				unix_error("sigprocmask error");
     		}
@@ -201,7 +201,8 @@ void eval(char *cmdline)
 				unix_error("setpgid error");
     		}
         	if(execvp(argv[0],argv)<0){
-                unix_error(argv[0]);
+                printf("%s: Command not found\n",argv[0] );
+                //unix_error(argv[0]);
                 exit(1);
             }
             //error=execvp(argv[0],argv);
@@ -212,6 +213,7 @@ void eval(char *cmdline)
             }
             else{
                 addjob(jobs,pid,BG,cmdline);
+                printf("[%d] (%d) %s",pid2jid(pid),pid,cmdline);
             }
             //printf("Here1\n");
             if(sigprocmask(SIG_UNBLOCK,&sigbits,NULL)==-1){ // parent process may need to use it
@@ -228,9 +230,9 @@ void eval(char *cmdline)
                 //printf("Here2\n");
                 waitfg(pid);
             }
-            else if(bg==1){
-                printf("[%d] (%d) %s",pid2jid(pid),pid,cmdline);
-            }
+            // else if(bg==1){
+            //     printf("[%d] (%d) %s",pid2jid(pid),pid,cmdline);
+            // }
         }
         /*else{
             if(pid!=0){
@@ -432,7 +434,7 @@ void do_bgfg(char **argv){
  */
 void waitfg(pid_t pid){
 	int status;
- //    //printf("here\n");
+    //printf("here\n");
 	// if(waitpid(-pid,&status,WUNTRACED)<0){
  //        //printf("here\n");
  //        unix_error("wait error");
@@ -464,7 +466,7 @@ void sigchld_handler(int sig){  // I just need to do error handling for FG job. 
     // else{
     //     unix_error("waitpid error");
     // }
-    while ((pid = waitpid(fgpid(jobs), &status, WNOHANG|WUNTRACED)) > 0) {
+    if ((pid = waitpid(fgpid(jobs), &status, WNOHANG|WUNTRACED)) > 0) {
         if (WIFSTOPPED(status)){
             sigtstp_handler(20);
         }
