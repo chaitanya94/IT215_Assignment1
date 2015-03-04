@@ -171,92 +171,51 @@ void eval(char *cmdline)
 	pid_t pid;
     int bg,i=1,error;
     char *argv[MAXARGS];    /*The *argv array to hold to command line inputs*/
-    //*argv=(char *)malloc(sizeof(char)*MAXLINE);
-    
+
     bg=parseline(cmdline,argv);
-	
-    //if(strcmp(argv[0],"quit")==0 || strcmp(argv[0],"jobs")==0 || strcmp(argv[0],"bg")==0 || strcmp(argv[0],"fg")==0){  /*If builtin command then execute that*/
-    //    builtin_cmd(argv);
-    //}
-    if(builtin_cmd(argv)!=1){
-    	if(sigemptyset(&sigbits)==-1){
-			unix_error("sigemptyset error");
+
+    if(builtin_cmd(argv)!=1){   /*Check if command to be executed is fg or bg*/
+    	if(sigemptyset(&sigbits)==-1){ /* Make the signal bits empty*/
+			unix_error("sigemptyset error"); 
     	}
     	
-    	if(sigaddset(&sigbits,SIGCHLD)){
+    	if(sigaddset(&sigbits,SIGCHLD)){   /* Add the sigchld bit to the set */
 			unix_error("sigaddset error");
     	}
     	
-    	if(sigprocmask(SIG_BLOCK,&sigbits,NULL)==-1){
+    	if(sigprocmask(SIG_BLOCK,&sigbits,NULL)==-1){  /* Mask the sigchld signal */
 			unix_error("sigprocmask error");
     	}
 
     	pid=fork();
         if(pid==0){
-        	if(sigprocmask(SIG_UNBLOCK,&sigbits,NULL)==-1){		// child process may need to use it
+        	if(sigprocmask(SIG_UNBLOCK,&sigbits,NULL)==-1){		/* Unblock sigchld for child process */
 				unix_error("sigprocmask error");
     		}
 
-    		if(setpgid(0,0)==-1){
+    		if(setpgid(0,0)==-1){ /* Set the group id of the command to be executed */
 				unix_error("setpgid error");
     		}
         	if(execve(argv[0],argv,environ)<0){
                 printf("%s: Command not found\n",argv[0] );
-                //unix_error(argv[0]);
                 exit(1);
             }
-            //error=execvp(argv[0],argv);
         }
         else{
-            if(bg==0){
+            if(bg==0){  /* Add fg job */
                 addjob(jobs,pid,FG,cmdline);
             }
             else{
-                addjob(jobs,pid,BG,cmdline);
+                addjob(jobs,pid,BG,cmdline);    /* Add bg job */
                 printf("[%d] (%d) %s",pid2jid(pid),pid,cmdline);
             }
-            //printf("Here1\n");
-            if(sigprocmask(SIG_UNBLOCK,&sigbits,NULL)==-1){ // parent process may need to use it
-                //printf("Here");
+            if(sigprocmask(SIG_UNBLOCK,&sigbits,NULL)==-1){ /* Unblock sigchld for parent process */
                 unix_error("sigprocmask error");
             }
-            //printf("Here2\n");
-            //printf("Here\n");
-            /*if(error==-1){
-                unix_error(argv[0]);
-            }*/
-            //printf("Here3\n");
             if(bg==0){
-                //printf("Here2\n");
-                waitfg(pid);
+                waitfg(pid);    /* Wait untill fg process is completed */
             }
-            // else if(bg==1){
-            //     printf("[%d] (%d) %s",pid2jid(pid),pid,cmdline);
-            // }
         }
-        /*else{
-            if(pid!=0){
-    			if(sigprocmask(SIG_UNBLOCK,&sigbits,NULL)==-1){		// parent process may need to use it
-    				unix_error("sigprocmask()");
-        		}
-            }
-            if(bg==0){
-    			addjob(jobs,pid,FG,cmdline);
-    		}
-    		else{
-    			addjob(jobs,pid,BG,cmdline);
-    		}
-            /*if(error==-1){
-         	    unix_error(argv[0]);
-            }*/
-            
-    		/*if(bg==0){
-    			waitfg(pid);
-    		}
-    		else if(bg==1){
-    			printf("[%d] (%d) %s",pid2jid(pid),pid,cmdline);
-    		}*/
-        //}
     }
 
     return;
@@ -332,39 +291,28 @@ int builtin_cmd(char **argv){
 		
 	else{
 			strcpy(str,argv[0]);
-			ret=strstr(array,str);
+			ret=strstr(array,str);   /* strstr() return pointer to first occurence of char str[0] in array*/
             if(ret==NULL)
                 return 0;
             ans=*ret;
 			switch(ans){
-				case 'q':   //quit
+				case 'q':   /* quit condition */
 					exit(0);
 					break;
-				case 'j':   //job
-                    /*for(i=0;i<MAXJOBS;i++){
-                        if(jobs[i].state==BG){
-                            printf("[%d] (%d) Running %s\n",jobs[i].jid,jobs[i].pid,jobs[i].cmdline);
-                        }
-                        else if(jobs[i].state==ST){
-                            printf("[%d] (%d) Stopped %s\n",jobs[i].jid,jobs[i].pid,jobs[i].cmdline);
-                        }
-                    }*/
+				case 'j':   /* job condition */
                     listjobs(jobs);
 					return 1;
-				case 'b':   //bg
-				case 'f':   //fg
+				case 'b':   /* bg condition - fall through to fg condition where call to function executed */
+				case 'f':   /* fg condition */
                     do_bgfg(argv);
 					return 1;;
 				default:
 					return 0;
 
 			}
-			//if(strcmp(argv[0],"quit")==0 || strcmp(argv[0],"jobs")==0 || strcmp(argv[0],"bg")==0 || strcmp(argv[0],"fg")==0){
-			
+						
 	}
-	
-	return 0;
-   // return 0;     /* not a builtin command */
+    return 0;     /* not a builtin command */
 }
 
 /* 
@@ -372,64 +320,54 @@ int builtin_cmd(char **argv){
  */
 void do_bgfg(char **argv){
     pid_t toUse;
-    int error,jid;
+    int jid;
     char *str;
     struct job_t *job=NULL;
     pid_t pid;
 
     str=argv[1];
-    if(str==NULL){
+    if(str==NULL){  /* If less than 2 arguments given */
         printf("%s command requires PID or %%jobid argument\n",argv[0]);
         return ;
     }
-    //argv[1]=toUse;
 
-    if(str[0]=='%'){
+    if(str[0]=='%'){    /* if jid given */
         jid=atoi(&str[1]);
-        if((job=getjobjid(jobs,jid))==NULL){
+
+        if((job=getjobjid(jobs,jid))==NULL){    /* Get job and check if NULL*/
             printf("%s: No such job\n",str);
             return ;
         }
     }
 
-    else if(isdigit(str[0])){
+    else if(isdigit(str[0])){   /* if pid given */
         pid=atoi(str);
-        if((job=getjobpid(jobs,pid))==NULL){
+
+        if((job=getjobpid(jobs,pid))==NULL){    /* Get job and check if NULL*/
             printf("(%s): No such process\n",str);
             return ;
         }
     }
     else{
-        printf("%s: argument must be a PID or %%jobid argument\n",argv[1]);
+        printf("%s: argument must be a PID or %%jobid argument\n",argv[1]); /* Invalid argument given */
         return;
     }
 
-    if(job!=NULL && job->state==ST){
-        if(kill(-(job->pid),SIGCONT)<0){
-            unix_error("kill error");
-        }
+    kill(-(job->pid),SIGCONT);  /* Send sigcont to process */
 
-        if(!strcmp("bg",argv[0])){
-            job->state=BG;
-            printf("[%d] (%d) %s", job->jid, job->pid, job->cmdline);
-            //job->state=BG;
-        }
-
-        else if(!strcmp("fg",argv[0])){
-            job->state=FG;
-            waitfg(job->pid);
-        }
-        else{
-            printf("bg/fg error: %s\n",argv[0]);
-        }
-        /*kill(toUse,SIGCONT);
-        if(fork()==0){
-             error=execl("/bin/kill","-s","SIGCONT",toUse);
-        }
-        if(error!=0){
-            unix_error("Cannot kill");
-        }*/
+    if(!strcmp("bg",argv[0])){
+        job->state=BG;
+        printf("[%d] (%d) %s", job->jid, job->pid, job->cmdline);
     }
+
+    else if(!strcmp("fg",argv[0])){
+        job->state=FG;
+        waitfg(job->pid);
+    }
+    else{
+        printf("bg/fg error: %s\n",argv[0]);
+    }
+
     return;
 }
 
@@ -437,14 +375,8 @@ void do_bgfg(char **argv){
  * waitfg - Block until process pid is no longer the foreground process
  */
 void waitfg(pid_t pid){
-	//int status;
-    //printf("here\n");
-	// if(waitpid(-pid,&status,WUNTRACED)<0){
- //        //printf("here\n");
- //        unix_error("wait error");
- //    }
+	int status;
     while(pid==fgpid(jobs));
-    //waitpid(pid, &status, WUNTRACED);
     return;
 }
 
@@ -463,22 +395,15 @@ void sigchld_handler(int sig){  // I just need to do error handling for FG job. 
     pid_t pro_run=fgpid(jobs);
     int status;
     pid_t pid;
-    // if(waitpid(pro_run,&status,WNOHANG | WUNTRACED)!=-1){
-    //     if(WIFEXITED(status)!=0){
-    //         printf("Process %d didnt exit normally\n",pro_run);
-    //     }
-    // }
-    // else{
-    //     unix_error("waitpid error");
-    // }
-    if ((pid = waitpid(fgpid(jobs), &status, WNOHANG|WUNTRACED)) > 0) {
-        if (WIFSTOPPED(status)){
+    while((pid = waitpid(pro_run, &status, WNOHANG|WUNTRACED)) > 0) {   /* while loop - for cases where more than one child terminates */
+
+        if (WIFSTOPPED(status)){    /* If child terminated due to sigtstp */
             sigtstp_handler(20);
         }
-        else if (WIFSIGNALED(status)){
+        else if (WIFSIGNALED(status)){  /* If child terminated due to sigint */
             sigint_handler(-2);
         }
-        else if (WIFEXITED(status)){
+        else if (WIFEXITED(status)){    /* If child terminated normally */
             deletejob(jobs, pid);
         }
     }
@@ -496,16 +421,15 @@ void sigchld_handler(int sig){  // I just need to do error handling for FG job. 
 void sigint_handler(int sig){
     pid_t fg_run=fgpid(jobs);
     int error=0;
+
     if(fg_run!=0){
+
         kill(-fg_run,SIGINT);
-        /*if(fork()==0){
-            error=execl("/bin/kill","-2",fg_run);
+
+        if(sig<0){
+            printf("Job [%d] (%d) terminated by signal %d\n",pid2jid(fg_run),fg_run,SIGINT);
+            deletejob(jobs,fg_run);
         }
-        if(error!=0){
-            unix_error("Cannot kill");
-        }*/
-        printf("Job [%d] (%d) terminated by signal %d\n",pid2jid(fg_run),fg_run,SIGINT);
-        deletejob(jobs,fg_run);
     }
     return;
 }
@@ -518,17 +442,12 @@ void sigint_handler(int sig){
 void sigtstp_handler(int sig){
     pid_t fg_run=fgpid(jobs);
     int error=0;
+
     if(fg_run!=0){
-        kill(-fg_run,SIGTSTP);
-        /*if(fork()==0){
-            error=execl("/bin/kill","-18",fg_run);
-        }
-        if(error!=0){
-            unix_error("Cannot kill");
-        }*/
+        
         getjobpid(jobs,fg_run)->state=ST;
         printf("Job [%d] (%d) stopped by signal %d\n",pid2jid(fg_run),fg_run,SIGTSTP);
-        //getjobpid(jobs,fg_run)->state=ST;
+        kill(-fg_run,SIGTSTP);
     }
     return;
 }
