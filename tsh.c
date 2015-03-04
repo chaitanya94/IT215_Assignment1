@@ -213,16 +213,19 @@ void eval(char *cmdline)
             else{
                 addjob(jobs,pid,BG,cmdline);
             }
+            //printf("Here1\n");
             if(sigprocmask(SIG_UNBLOCK,&sigbits,NULL)==-1){ // parent process may need to use it
                 //printf("Here");
                 unix_error("sigprocmask error");
             }
+            //printf("Here2\n");
             //printf("Here\n");
             /*if(error==-1){
                 unix_error(argv[0]);
             }*/
-            
+            //printf("Here3\n");
             if(bg==0){
+                //printf("Here2\n");
                 waitfg(pid);
             }
             else if(bg==1){
@@ -429,10 +432,12 @@ void do_bgfg(char **argv){
  */
 void waitfg(pid_t pid){
 	int status;
-    //printf("here\n");
-	if(waitpid(-pid,&status,WNOHANG|WUNTRACED)<0){
-        unix_error("wait error");
-    }
+ //    //printf("here\n");
+	// if(waitpid(-pid,&status,WUNTRACED)<0){
+ //        //printf("here\n");
+ //        unix_error("wait error");
+ //    }
+    waitpid(pid, &status, WUNTRACED);
     return;
 }
 
@@ -450,15 +455,29 @@ void waitfg(pid_t pid){
 void sigchld_handler(int sig){  // I just need to do error handling for FG job. BG is done after the fork() part anyway
     pid_t pro_run=fgpid(jobs);
     int status;
-
-    if(waitpid(pro_run,&status,WNOHANG | WUNTRACED)!=-1){
-        if(WIFEXITED(status)!=0){
-            printf("Process %d didnt exit normally\n",pro_run);
+    pid_t pid;
+    // if(waitpid(pro_run,&status,WNOHANG | WUNTRACED)!=-1){
+    //     if(WIFEXITED(status)!=0){
+    //         printf("Process %d didnt exit normally\n",pro_run);
+    //     }
+    // }
+    // else{
+    //     unix_error("waitpid error");
+    // }
+    while ((pid = waitpid(fgpid(jobs), &status, WNOHANG|WUNTRACED)) > 0) {
+        if (WIFSTOPPED(status)){
+            sigtstp_handler(20);
+        }
+        else if (WIFSIGNALED(status)){
+            sigint_handler(-2);
+        }
+        else if (WIFEXITED(status)){
+            deletejob(jobs, pid);
         }
     }
-    else{
-        unix_error("waitpid error");
-    }
+    if (errno != ECHILD) {
+       unix_error("waitpid error");
+    } 
     return;
 }
 
