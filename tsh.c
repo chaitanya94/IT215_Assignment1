@@ -180,25 +180,25 @@ void eval(char *cmdline)
     //}
     if(builtin_cmd(argv)!=1){
     	if(sigemptyset(&sigbits)==-1){
-			unix_error("sigemptyset()");
+			unix_error("sigemptyset error");
     	}
     	
     	if(sigaddset(&sigbits,SIGCHLD)){
-			unix_error("sigaddset()");
+			unix_error("sigaddset error");
     	}
     	
     	if(sigprocmask(SIG_BLOCK,&sigbits,NULL)==-1){
-			unix_error("sigprocmask()");
+			unix_error("sigprocmask error");
     	}
 
     	
         if(pid=fork()==0){
         	if(sigprocmask(SIG_UNBLOCK,&sigbits,NULL)==-1){		// child process may need to use it
-				unix_error("sigprocmask()");
+				unix_error("sigprocmask error");
     		}
 
     		if(setpgid(0,0)==-1){
-				unix_error("setpgid()");
+				unix_error("setpgid error");
     		}
         	if(execvp(argv[0],argv)<0){
                 unix_error(argv[0]);
@@ -207,17 +207,16 @@ void eval(char *cmdline)
             //error=execvp(argv[0],argv);
         }
         else{
-            if(sigprocmask(SIG_UNBLOCK,&sigbits,NULL)==-1){ // parent process may need to use it
-                printf("Here");
-                unix_error("sigprocmask()");
-            }
             if(bg==0){
                 addjob(jobs,pid,FG,cmdline);
             }
             else{
                 addjob(jobs,pid,BG,cmdline);
             }
-            
+            if(sigprocmask(SIG_UNBLOCK,&sigbits,NULL)==-1){ // parent process may need to use it
+                //printf("Here");
+                unix_error("sigprocmask error");
+            }
             //printf("Here\n");
             /*if(error==-1){
                 unix_error(argv[0]);
@@ -430,7 +429,7 @@ void do_bgfg(char **argv){
  */
 void waitfg(pid_t pid){
 	int status;
-
+    //printf("here\n");
 	if(waitpid(-pid,&status,WNOHANG|WUNTRACED)<0){
         unix_error("wait error");
     }
